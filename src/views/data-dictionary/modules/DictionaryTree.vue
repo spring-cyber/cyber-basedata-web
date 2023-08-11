@@ -1,7 +1,7 @@
 <template>
   <c-tree-body>
     <template #header>
-      <div class="grid grid-flow-col gap-x-40px">
+      <div class="grid grid-flow-col gap-x-20px">
         <a-input
           v-model:value="treeState.dictionary"
           placeholder="搜索字典"
@@ -21,52 +21,23 @@
       </div>
     </template>
     
-    <a-tree
-      block-node
-      :height="650"
+    <g-tree
       :fieldNames="{ title: 'name', key: 'id' }"
       v-model:selectedKeys="treeState.selectedKeys"
       v-model:expandedKeys="treeState.expandedKeys"
       :tree-data="treeState.treeData"
-      class="dictionary-tree"
+      :overlay-menu="treeState.overlayMenu"
+      :highlight="treeState.highlight"
       @select="methods.onSelect"
-      @expand="methods.onExpand"
     >
       <template #title="record">
-        <div class="dictionary-tree-node">
-          <div
-            :class="[
-              'w-0 flex-1 ellipsis',
-              { 'dictionary-tree-node-highlight': treeState.highlight[record.id] },
-              { 'dictionary-tree-node-disuse': record.status == '1' }
-            ]"
-            :title="`${record.name} ${record.code}`"
-            @mouseenter="() => treeState.hoverId = record.id"
-            @mouseleave="() => treeState.hoverId = undefined"
-          >
-            <template v-if="record.type == '0'">{{ record.name }} {{ record.code }}</template>
-            <div  v-else class="dict-classify-body">
-              <div>{{ record.name }} {{ record.code }}</div>
-              <div class="color-[#666666]">{{ record.description || '-' }}</div>
-            </div>
-          </div>
-          <a-dropdown
-            v-if="treeState.hoverId == record.id"
-            trigger="click"
-            @mouseenter="() => treeState.hoverId = record.id"
-          >
-            <c-icon icon="cyber-caozuo" size="16px" @click.stop></c-icon>
-            <template #overlay>
-              <a-menu class="w-120px pt-7px pb-7px">
-                <a-menu-item @click="methods.showModal(record)">编辑</a-menu-item>
-                <a-menu-item @click="methods.delete(record)">删除</a-menu-item>
-                <a-menu-item v-if="record.type == '0'" @click="methods.showModal({ type: '1' }, record.id)">新建字典</a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+        <span v-if="record.type == '0'" :title="`${record.name} ${record.code}`">{{ record.name }} {{ record.code }}</span>
+        <div  v-else class="dict-classify-body" :title="`${record.name} ${record.code}`">
+          <div>{{ record.name }} {{ record.code }}</div>
+          <div class="text-[#666666]">{{ record.description || '-' }}</div>
         </div>
       </template>
-    </a-tree>
+    </g-tree>
   </c-tree-body>
 
   <ModifyDictionary ref="dictRef" @ok="methods.searchQuery"></ModifyDictionary>
@@ -74,11 +45,10 @@
 </template>
 
 <script setup>
-import axios, { deleteConfrim } from '@/api';
+import axios from '@/api';
 import ModifyDictionary from './ModifyDictionary.vue';
 import ModifyDictionaryGroup from './ModifyDictionaryGroup.vue';
-import { initHistoryState, changeHistoryState } from 'cyber-web-ui';
-import { onUnmounted } from 'vue';
+import { initHistoryState, changeHistoryState, Modal } from 'cyber-web-ui';
 
 const dictRef = ref();
 const dictGroupRef = ref();
@@ -88,7 +58,15 @@ const treeState = reactive({
   expandedKeys: [],
   highlight: {},
   dictionary: undefined,
-  hoverId: undefined,
+  overlayMenu: [
+    { label: '编辑', handler: (record) => methods.showModal(record) },
+    { label: '删除', handler: (record) => methods.delete(record) },
+    {
+      label: '新建字典',
+      show: (record) => record.type == '0',
+      handler: (record) => methods.showModal({ type: '1' }, record.id),
+    },
+  ]
 });
 
 const queryState = reactive({
@@ -97,6 +75,7 @@ const queryState = reactive({
   }),
 });
 
+const interceptAction = inject('interceptAction');
 const $emit = defineEmits(['change']);
 const methods = {
   async searchQuery() {
@@ -105,7 +84,9 @@ const methods = {
         url: '/basedata/dict/tree',
         method: 'get',
       });
-      treeState.treeData = res.data || [];
+      treeState.treeData = (res.data || []).map(item => {
+        return { ...item, selectable: false, };
+      });
     } catch(e) {
       treeState.treeData = [];
       throw Error(e);
@@ -127,68 +108,74 @@ const methods = {
     treeState.selectedKeys = [node.id];
     treeState.expandedKeys = [parent.id];
   },
-  onSelect(selectedKeys, {selected, selectedNodes, node, event}) {
-    if(!selected || node.type == '0') {
-      treeState.selectedKeys = [queryState.dict];
+  async onSelect(selectedKeys, {selected, selectedNodes, node, event}) {
+    treeState.selectedKeys = [queryState.dict];
+    if(!selected) return;
+    try {
+      await interceptAction();
+    } catch {
       return;
     }
     queryState.dict = node.id;
-    selectedKeys = selectedKeys[0];
+    treeState.selectedKeys = [node.id];
     $emit('change', node, node.parent.node);
     changeHistoryState(queryState);
   },
-  onExpand(expandedKeys, {expanded: bool, node}) {
-    treeState.expandedKeys = expandedKeys;
-  },
   // 搜索字典
   searchDictionary() {
-    let dictionary = treeState.dictionary;
+    let { dictionary } = treeState;
     treeState.highlight = {};
     treeState.expandedKeys = [];
-    if(!dictionary) {
-      treeState.highlight = {};
-      return;
-    }
-    let reg = new RegExp(`"(name|code)":"([^"])*${dictionary}([^"])*"`);
+    if(!dictionary) return;
+    let highlight = {};
     treeState.treeData.forEach(item => {
-      if(item.name.includes(dictionary) || item.code.includes(dictionary)) treeState.highlight[item.id] = true;
-      if(item.children && reg.test(JSON.stringify(item.children))) {
-        item.children.forEach(citem => {
-          if(citem.name.includes(dictionary) || citem.code.includes(dictionary)) treeState.highlight[citem.id] = true;
-        });
-      }
+      if(item.name.includes(dictionary) || item.code.includes(dictionary)) highlight[item.id] = '1';
+      (item.children || []).forEach(citem => {
+        if(citem.name.includes(dictionary) || citem.code.includes(dictionary)) {
+          highlight[item.id] = '3';
+          highlight[citem.id] = '2';
+        }
+      });
     });
-    treeState.expandedKeys = Object.keys(treeState.highlight);
+    treeState.expandedKeys = Object.keys(highlight).filter(key => {
+      let value = highlight[key];
+      if(value == '3') delete highlight[key];
+      return /3/.test(value);
+    });
+    treeState.highlight = highlight;
   },
   async showModal(record, parentId) {
+    try {
+      await interceptAction();
+    } catch {
+      return;
+    }
     if(record.type == '0') unref(dictGroupRef).showModal(record);
     else if(record.type == '1') unref(dictRef).showModal(record, parentId);
   },
-  delete(record) {
-    deleteConfrim({
+  async delete(record) {
+    try {
+      await interceptAction();
+    } catch {
+      return;
+    }
+    Modal.verify({
       content: `是否确认删除“${record.code}”字典？`,
       value: record.code,
-    }, {
-      url: `/basedata/dict`,
-      method: 'delete',
       params: {
-        id: record.id,
-      }
+        url: `/basedata/dict`,
+        method: 'delete',
+        params: {
+          id: record.id,
+        }
+      },
     }).then(() => {
       methods.searchQuery();
     });
   },
-  clickHandler() {
-    treeState.hoverId = undefined;
-  },
 };
 
 methods.searchQuery();
-
-document.addEventListener('click', methods.clickHandler)
-onUnmounted(() => {
-  document.removeEventListener('click', methods.clickHandler)
-});
 
 defineExpose({
   searchQuery: methods.searchQuery,
@@ -196,43 +183,20 @@ defineExpose({
 </script>
 
 <style lang="less" scoped>
-.dictionary-tree {
-  .dictionary-tree-node {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: relative;
-  }
-  .ant-tree-treenode {
-    .dictionary-tree-node-disuse {
-      color: #BDBDBD;
-    }
-    &.ant-tree-treenode-selected {
-      .dictionary-tree-node-disuse {
-        color: hardlight(@primary-color, #FFFFFF33);
-      }
-    }
-    .dictionary-tree-node-highlight {
-      color: @primary-color;
-      &.dictionary-tree-node-disuse {
-        color: hardlight(@primary-color, #FFFFFF33);
-      }
-    }
-  }
-  .dict-classify-body {
+
+.dict-classify-body {
+  .ellipsis();
+  width: 100%;
+  line-height: initial;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  & > div {
     .ellipsis();
-    width: 100%;
-    line-height: initial;
-    height: 56px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    & > div {
-      .ellipsis();
-    }
-    & > div:first-child {
-      margin-bottom: 8px;
-    }
+  }
+  & > div:first-child {
+    margin-bottom: 8px;
   }
 }
 </style>

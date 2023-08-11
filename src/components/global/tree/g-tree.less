@@ -1,0 +1,24 @@
+.g-tree {
+  .g-tree-node {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+  }
+  .ant-tree-treenode {
+    .g-tree-node-disuse {
+      color: #BDBDBD;
+    }
+    &.ant-tree-treenode-selected {
+      .g-tree-node-disuse {
+        color: hardlight(@primary-color, #FFFFFF33);
+      }
+    }
+    .g-tree-node-highlight {
+      color: @primary-color;
+      &.g-tree-node-disuse {
+        color: hardlight(@primary-color, #FFFFFF33);
+      }
+    }
+  }
+}

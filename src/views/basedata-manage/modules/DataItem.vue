@@ -2,7 +2,9 @@
   <div class="data-item">
     <div class="data-item-label">{{ label }}：</div>
     <div class="data-item-content">
-      <slot></slot>
+      <slot>
+        <span class="ellipsis" :title="content">{{ content || '-' }}</span>
+      </slot>
     </div>
   </div>
 </template>
@@ -10,6 +12,7 @@
 <script setup>
 defineProps({
   label: String,
+  content: String,
 })
 </script>
 
@@ -27,7 +30,9 @@ defineProps({
       
   }
   .data-item-content {
-    .ellipsis();
+    // .ellipsis();
+    width: 0;
+    flex: 1;
     color: #2D3D48;
   }
 }

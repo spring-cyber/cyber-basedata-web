@@ -1,0 +1,29 @@
+.table-editor-form.ant-form-inline {
+  display: block;
+}
+.ant-table-row {
+  .cyber-table-cell-index {
+    background-color: #fafafa;
+  }
+  &.cyber-table-row-selected {
+    & > td {
+      background-color: hardlight(@primary-color, #ffffffe6) !important;
+    }
+  }
+  & > td {
+    .ant-form-item {
+      margin-right: 0;
+      &.ant-form-item-has-error,
+      &.ant-form-item-with-help {
+        margin-bottom: 0;
+      }
+    }
+    .ant-form-item-explain.ant-form-item-explain-connected {
+      display: none;
+    }
+  }
+}
+.cyber-table-input-block {
+  position: absolute;
+  z-index: -1000;
+}

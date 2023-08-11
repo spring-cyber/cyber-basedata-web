@@ -1,7 +1,7 @@
 <template>
   <div>
-    <c-page-label title="数据字典" icon="cyber-shujuzidian" document-link="javascript:;">
-      <template #tips>数据字典可以帮助企业更好地管理数据,提高数据的可维护性和可重用性,降低数据管理成本。</template>
+    <c-page-label title="数据字典" icon="cyber-shujuzidian" document-link="#数据字典">
+      <template #tips>数据字典可以帮助企业更好地管理数据，提高数据的可维护性和可重用性，降低数据管理成本。</template>
     </c-page-label>
     
     <div class="flex">
@@ -19,13 +19,15 @@
           :customRow="tableState.customRow"
           @search="methods.searchQuery"
         >
-          <template #collapse>{{ tableState.dictGroupNode.name || '-' }} / {{ tableState.dictNode.name || '-' }}</template>
+          <template #collapse>
+            <span class="font-600">{{ tableState.dictGroupNode.name || '-' }} / {{ tableState.dictNode.name || '-' }}</span>
+          </template>
           <template #right>
-            <a-button type="primary" :disabled="!tableState.dictNode.id || tableState.loading" @click="methods.modifyDict('0')">新增</a-button>
+            <a-button type="primary" :disabled="!tableState.dictNode.id || tableState.loading" @click="methods.initFormState('0')">新增</a-button>
           </template>
           <template #bodyCell="{ column, record }">
             <!-- 编辑 -->
-            <template v-if="formState.id == record.id">
+            <template v-if="formState.id == record.id && tableState.isModify">
               <template v-if="column.key == 'code' && formState.action == '0'">
                 <a-input v-model:value="formState.code"></a-input>
               </template>
@@ -41,13 +43,13 @@
             </template>
             <!-- 状态 -->
             <template v-if="column.key == 'status'">
-              <c-select v-if="formState.id == record.id" v-model:value="formState.status" width="100%" :options="$dictStore.dictStatus" :getPopupContainer="(triggerNode) => triggerNode.parentNode.parentNode.parentNode"></c-select>
-              <c-cell-dict v-else :options="options" :value="record.status"></c-cell-dict>
+              <c-select v-if="formState.id == record.id && tableState.isModify" v-model:value="formState.status" width="100%" :options="DICTIONARY_STATUS" :getPopupContainer="(triggerNode) => triggerNode.parentNode.parentNode.parentNode"></c-select>
+              <c-cell-dict v-else :options="DICTIONARY_STATUS" :value="record.status"></c-cell-dict>
             </template>
             <!-- 颜色 -->
             <template v-if="column.key == 'color'">
               <ColorPicker
-                v-if="formState.id == record.id" 
+                v-if="formState.id == record.id && tableState.isModify" 
                 v-model:pureColor="formState.color"
                 format="hex8"
                 shape="circle"
@@ -62,19 +64,19 @@
             </template>
             <!-- 图标 -->
             <template v-if="column.key == 'icon'">
-              <c-icon-select v-if="formState.id == record.id" v-model:value="formState.icon"></c-icon-select>
+              <c-icon-select v-if="formState.id == record.id && tableState.isModify" v-model:value="formState.icon"></c-icon-select>
               <c-icon v-else :icon="record.icon" size="16" isSvg></c-icon>
             </template>
             <template v-if="column.key == 'action'">
               <div class="dict-acion-handler-block" @dblclick.stop>
                 <!-- 撤回 -->
-                <c-icon v-if="formState.id == record.id" icon="cyber-chexiao" size="16" color="#4D6AAB" @click="methods.revocation"></c-icon>
+                <c-icon v-if="formState.id == record.id && tableState.isModify" icon="cyber-chexiao" size="16" color="#4D6AAB" @click="methods.revocation"></c-icon>
                 <!-- 复制 -->
-                <c-icon v-else icon="cyber-fuzhi" size="16" color="#4D6AAB" @click="methods.modifyDict('0', record)"></c-icon>
+                <c-icon v-else icon="cyber-fuzhi" size="16" color="#4D6AAB" @click="methods.initFormState('0', record)"></c-icon>
                 <!-- 保存 -->
-                <c-icon v-if="formState.id == record.id" icon="cyber-baocun" size="16" color="#05C059" @click="methods.onSubmit"></c-icon>
+                <c-icon v-if="formState.id == record.id && tableState.isModify" icon="cyber-baocun" size="16" color="#05C059" @click="methods.onSubmit"></c-icon>
                 <!-- 编辑 -->
-                <c-icon v-else icon="cyber-bianji1" size="16" color="#05C059" @click="methods.modifyDict('1', record)"></c-icon>
+                <c-icon v-else icon="cyber-bianji1" size="16" color="#05C059" @click="methods.initFormState('1', record)"></c-icon>
                 <!-- 删除 -->
                 <c-icon icon="cyber-shanchu2" size="16" color="#DB5756" @click="methods.delete(record)"></c-icon>
               </div>
@@ -88,14 +90,16 @@
 
 <script setup>
 import DictionaryTree from './modules/DictionaryTree.vue';
-import { dictStore } from '@/store';
-import axios, { deleteConfrim } from '@/api';
-import { generateRandomCode, Modal } from 'cyber-web-ui';
+import axios from '@/api';
 import { ColorPicker } from "vue3-colorpicker";
 import "vue3-colorpicker/dist/style.css";
 import { message } from 'ant-design-vue';
+import { generateRandomCode, Modal, useDict } from 'cyber-web-ui';
+import { maintainStore } from '@/store';
+import { onBeforeRouteLeave } from 'vue-router';
+import { watchEffect } from 'vue';
 
-const $dictStore = dictStore();
+const { DICTIONARY_STATUS } = useDict({ BASEDATA: ['DICTIONARY_STATUS'] });
 const tableRef = ref(); // 表格ref
 // 表格信息
 const tableState = reactive({
@@ -108,7 +112,7 @@ const tableState = reactive({
     { title: '颜色', key: "color", width: '80px' },
     { title: '图标', key: "icon", width: '15%' },
     { title: '排序', dataIndex: 'orderNum', key: "orderNum", width: '15%'  },
-    { title: '操作人', dataIndex: "updateor", width: '120px', ellipsis: true, customRender: ({ text }) => text || '-/-'  },
+    { title: '操作人', dataIndex: "updator", width: '120px', ellipsis: true, customRender: ({ text }) => text || '-/-'  },
     { title: '操作时间', dataIndex: "updateTime", width: '180px', customRender: ({ text }) => text || '-/-'  },
     { title: '操作', fixed: "right", key: "action", width: '110px'  },
   ],
@@ -121,15 +125,13 @@ const tableState = reactive({
       onDblclick: (event) => {
         event && event.stopPropagation();
         if(record.id == formState.id) return;
-        methods.modifyDict('1', record);
+        methods.initFormState('1', record);
       }
     }
-  }
+  },
+  isModify: false,
 });
-const options = [
-  { label: '启用', value: '0', icon: 'cyber-zhengchang' },
-  { label: '停用', value: '1', icon: 'cyber-yichang' },
-]
+
 const formState = reactive({
   id: undefined,
   code: undefined,
@@ -152,6 +154,11 @@ const methods = {
   },
   // 搜索表格
   async searchQuery() {
+    try {
+      await methods.interceptAction(false);
+    } catch {
+      return;
+    }
     let { data, total } = await unref(tableRef).searchQuery({
       url: '/basedata/dict/search',
       method: 'get',
@@ -165,24 +172,30 @@ const methods = {
     tableState.dataSource = data;
     tableState.total = total;
   },
-  // 添加 / 编辑字典
-  modifyDict(action = '0', record) {
-    if(!formState.id) return methods.initFormState(action, record);
-    Modal.confirm({
-      title: `系统提示`,
-      width: '500px',
-      icon: 'cyber-tishi',
-      content: `当前有字典项正在进行${ action == '0' ? '添加' : '编辑' }操作，是否接着进行当前操作？确定后将不保存之前的操作!`,
-      okButtonProps: {
-        danger: true,
-      },
-      onOk: () => {
-        tableState.dataSource = tableState.dataSource.filter(item => !item.action);
-        methods.initFormState(action, record);
-      },
+  interceptAction(flag = true) {
+    if(!tableState.isModify) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      Modal.confirm({
+        width: '500px',
+        content: `确定取消${ formState.action == '0' ? '添加' : '编辑' }操作？确定后将不保存之前的操作!`,
+        onOk: async () => {
+          tableState.isModify = false;
+          if(flag) await methods.searchQuery();
+          else tableState.dataSource = tableState.dataSource.filter(item => item.id != formState.id);
+          resolve();
+        },
+        oncancel: reject,
+      });
     });
   },
-  initFormState(action, record = { orderNum: 1, status: '0', color: '#05C059' }) {
+  async initFormState(action = '0', record = { orderNum: 1, status: '0', color: '#05C059' }) {
+    try {
+      await methods.interceptAction();
+      tableState.isModify = true;
+    } catch(error) {
+      if(error) throw Error(error);
+      return;
+    }
     Object.keys(formState).forEach(key => {
       formState[key] = record[key];
     });
@@ -194,7 +207,7 @@ const methods = {
     }
   },
   // 撤回
-  revocation() {
+  async revocation() {
     Modal.confirm({
       title: `系统提示`,
       width: '500px',
@@ -204,25 +217,35 @@ const methods = {
         danger: true,
       },
       onOk: () => {
-        formState.id = undefined;
+        tableState.isModify = false;
         methods.searchQuery();
       },
     });
   },
   // 删除
-  delete(record) {
-    deleteConfrim({
-      content: `是否确认删除“${record.code}”字典？`,
-      value: record.code,
-    }, {
-      url: `/basedata/dict`,
-      method: 'delete',
-      params: {
-        id: record.id,
-      }
-    }).then(() => {
+  async delete(record) {
+    if(formState.action == '0' && formState.id == record.id) {
       methods.searchQuery();
-    });
+      tableState.isModify = false;
+      return;
+    }
+    try {
+      await methods.interceptAction(false);
+      Modal.verify({
+        content: `是否确认删除“${record.code}”字典？`,
+        value: record.code,
+        params: {
+          url: `/basedata/dict`,
+          method: 'delete',
+          params: {
+            id: record.id,
+          }
+        },
+      }).then(() => {
+        methods.searchQuery();
+        tableState.isModify = false;
+      });
+    } catch {}
   },
   async onSubmit() {
     tableState.loading = true;
@@ -235,6 +258,16 @@ const methods = {
     if(find) {
       tableState.loading = false;
       message.warning(`${find.label}字段不能为空！`);
+      return;
+    }
+    if (/^\s|\s$/.test(formState.code)) {
+      tableState.loading = false;
+      message.warning('编码首尾不能有空格！');
+      return;
+    }
+    if(!/^[A-Za-z0-9_-\s]+$/.test(formState.code)) {
+      tableState.loading = false;
+      message.warning('请输入大小写字母、数字、空格、下划线和横线');
       return;
     }
     try {
@@ -250,7 +283,7 @@ const methods = {
           parentId: tableState.dictNode.id,
         },
       });
-      formState.id = undefined;
+      tableState.isModify = false;
       message.success(res.message);
       methods.searchQuery();
     } catch (error) {
@@ -259,12 +292,24 @@ const methods = {
     }
   },
 };
-
+provide('interceptAction', methods.interceptAction);
+watchEffect(() => maintainStore().leaveIntercept = tableState.isModify);
+onBeforeRouteLeave(async (to, form, next) => {
+  if(!tableState.isModify) return next();
+  try {
+    // 离开页面确认操作弹窗
+    await methods.interceptAction(false);
+    maintainStore().leaveIntercept = false;
+    next();
+  } catch {
+    next(false);
+  }
+});
 </script>
 
 <style lang="less" scoped>
 .dict-acion-handler-block {
-  .cyber-icon {
+  .cyber-iconfont {
     cursor: pointer;
     margin-right: 10px;
     &:last-child {

@@ -15,27 +15,24 @@
       autocomplete="off"
       layout="vertical"
     >
+      <a-form-item label="主数据组" name="parentId">
+        <c-select v-model:value="formState.parentId" :disabled="!!modalState.parentId" :options="modalState.basedataGroup" :fieldNames="{ label: 'name', value: 'id' }" placeholder="请选择主数据组"></c-select>
+      </a-form-item>
+      <a-form-item label="表格名称" name="name">
+        <a-input v-model:value="formState.name" placeholder="请输入字典分组名称..." show-count :maxlength="32"></a-input>
+      </a-form-item>
+      <a-form-item label="表格编码" name="code">
+        <a-input v-model:value="formState.code" placeholder="请输入字典分组编码..." :disabled="!modalState.isCreate" show-count :maxlength="32"></a-input>
+      </a-form-item>
       <div class="grid grid-cols-2 gap-x-20px">
-        <a-form-item label="字典分组" name="parentId">
-          <c-select v-model:value="formState.parentId" :disabled="!!(modalState.isCreate && modalState.parentId)" :options="modalState.dictionaryGroup" placeholder="请选择字典分组..." :fieldNames="{ label: 'name', value: 'id' }"></c-select>
+        <a-form-item label="排序规则" name="collation">
+          <c-select v-model:value="formState.collation" :options="COLLATION" placeholder="请选择排序规则"></c-select>
         </a-form-item>
-        <a-form-item label="字典名称" name="name">
-          <a-input v-model:value="formState.name" placeholder="请输入字典名称" show-count :maxlength="32"></a-input>
-        </a-form-item>
-        <a-form-item label="编码" name="code">
-          <a-input v-model:value="formState.code" placeholder="请输入字典编码..." :disabled="!modalState.isCreate" show-count :maxlength="64"></a-input>
-        </a-form-item>
-        <a-form-item label="显示顺序" name="orderNum">
-          <a-input-number
-            :min="0"
-            :max="9999"
-            class="w-150px"
-            placeholder="请输入排序..."
-            v-model:value="formState.orderNum"
-          ></a-input-number>
+        <a-form-item label="存储引擎" name="engine">
+          <c-select v-model:value="formState.engine" :options="ENGINE" placeholder="请选择存储引擎"></c-select>
         </a-form-item>
       </div>
-      <a-form-item label="字典描述" name="description">
+      <a-form-item label="表格描述" name="description">
         <a-textarea v-model:value="formState.description" placeholder="请输入描述信息..." show-count :maxlength="120"></a-textarea>
       </a-form-item>
     </a-form>
@@ -45,15 +42,16 @@
 <script setup>
 import axios, { queryDetail } from '@/api';
 import { message } from 'ant-design-vue';
-import { required, checkCode } from 'cyber-web-ui';
+import { required, checkCode, useDict } from 'cyber-web-ui';
+const { COLLATION, ENGINE } = useDict({ BASEDATA: ['COLLATION', 'ENGINE'] });
 const formRef = ref(); // 表单ref
 // 弹窗信息
 const modalState = reactive({
   visible: false,
   isCreate: true,
-  title: computed(() => modalState.isCreate ? '新建字典' : '编辑字典'),
+  title: computed(() => modalState.isCreate ? '新建表格' : '编辑表格'),
   okText: computed(() => modalState.isCreate ? '新建' : '确定'),
-  dictionaryGroup: [],
+  basedataGroup: [],
   parentId: undefined,
 });
 // 表单信息
@@ -62,7 +60,9 @@ const formState = reactive({
   parentId: undefined,
   name: undefined,
   code: undefined,
-  orderNum: undefined,
+  type: undefined,
+  engine: undefined,
+  collation: undefined,
   description: undefined,
   version: undefined,
 });
@@ -71,35 +71,38 @@ const rules = {
   parentId: required(),
   name: required(),
   code: [required(), checkCode()],
-  orderNum: required(),
+  engine: required(),
+  collation: required(),
 };
 const $emit = defineEmits(['ok']);
 const methods = {
   async showModal(record, parentId) {
     modalState.visible = true;
     modalState.isCreate = !record?.id;
-    let detail = await queryDetail('/basedata/dict', record);
+    modalState.parentId = parentId;
+    let detail = await queryDetail('/basedata/basedata', record);
     Object.keys(formState).forEach(key => {
       formState[key] = detail?.[key];
     });
-    modalState.parentId = parentId;
     if(modalState.isCreate) {
-      formState.orderNum = 1;
       formState.parentId = parentId;
     }
-    methods.queryDictionaryGroup();
+    methods.queryBasedataGroup();
     nextTick(unref(formRef).clearValidate);
   },
-  async queryDictionaryGroup() {
-    modalState.dictionaryGroup = [];
+  async queryBasedataGroup() {
     try {
       let res = await axios.request({
-        url: '/basedata/dict/select',
+        url: '/basedata/basedata/select',
         method: 'get',
-        params: { type: '0' },
+        params: {
+          type: '0',
+        },
       });
-      modalState.dictionaryGroup = res.data || [];
-    } catch {}
+      modalState.basedataGroup = res.data || [];
+    } catch {
+      modalState.basedataGroup = [];
+    }
   },
   onSubmit() {
     return new Promise(async (resolve, reject) => {
@@ -108,12 +111,9 @@ const methods = {
         await unref(formRef).validate();
         // 请求添加/修改接口
         let res = await axios.request({
-          url: '/basedata/dict',
+          url: '/basedata/basedata',
           method: modalState.isCreate ? 'post' : 'put',
-          data: {
-            ...formState,
-            type: '1', // 字典类型
-          }
+          data: formState,
         });
         message.success(res.message);
         $emit('ok');
